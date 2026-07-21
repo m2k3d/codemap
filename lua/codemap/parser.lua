@@ -22,6 +22,11 @@ local queries = {
   lua = [[
     (function_declaration) @function
   ]],
+  -- methods, decorated defs (@staticmethod, ...) and `async def` are all
+  -- plain function_definition nodes too; decorators just wrap them.
+  python = [[
+    (function_definition) @function
+  ]],
 }
 
 local function node_text(node, bufnr)
@@ -93,6 +98,10 @@ function name_extractors.lua(node, bufnr)
   local name_node = node:field("name")[1]
   return node_text(name_node, bufnr)
 end
+
+-- python's function_definition, like lua's function_declaration, just has a
+-- plain `name` field to read.
+name_extractors.python = name_extractors.lua
 
 local function resolve_lang(bufnr)
   local ft = vim.bo[bufnr].filetype
