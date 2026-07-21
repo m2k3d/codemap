@@ -141,8 +141,12 @@ function M.get_functions(bufnr)
   for _, node in query:iter_captures(root, bufnr, 0, -1) do
     local name = extractor(node, bufnr)
     if name and name ~= "" then
-      local start_row = node:range()
-      table.insert(results, { name = name, lnum = start_row + 1 })
+      local start_row, _, end_row = node:range()
+      table.insert(results, {
+        name = name,
+        lnum = start_row + 1,
+        size = end_row - start_row + 1,
+      })
     end
   end
 

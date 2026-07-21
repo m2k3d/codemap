@@ -118,7 +118,11 @@ function M.render(items, source_bufnr)
   items = items or {}
   local lines = {}
   for _, item in ipairs(items) do
-    table.insert(lines, item.name)
+    if item.size then
+      table.insert(lines, item.name .. " (" .. item.size .. ")")
+    else
+      table.insert(lines, item.name)
+    end
   end
   if #lines == 0 then
     lines = { "(нет функций)" }
