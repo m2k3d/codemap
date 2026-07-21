@@ -7,6 +7,8 @@ M.defaults = {
   update_events = { "BufEnter", "TextChanged", "TextChangedI" },
   -- debounce delay (ms) applied to text-change events (BufEnter is instant)
   debounce_ms = 300,
+  -- open the sidebar automatically on startup, for the initial buffer
+  auto_open = false,
 }
 
 function M.merge(opts)

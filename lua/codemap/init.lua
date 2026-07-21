@@ -95,6 +95,11 @@ function M.setup(opts)
   window.setup(M.options)
   register_autocmds(M.options)
   register_commands()
+
+  if M.options.auto_open then
+    window.open()
+    refresh()
+  end
 end
 
 return M
