@@ -125,7 +125,7 @@ function M.render(items, source_bufnr)
     end
   end
   if #lines == 0 then
-    lines = { "(нет функций)" }
+    lines = { "(no functions)" }
   end
 
   vim.bo[state.bufnr].modifiable = true
