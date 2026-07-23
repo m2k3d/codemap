@@ -3,6 +3,30 @@
 -- autocmd scheduling; it only draws whatever it is given.
 local M = {}
 
+local ns = vim.api.nvim_create_namespace("codemap")
+
+-- item.kind -> highlight group used for that line in the sidebar.
+local kind_highlights = {
+  ["function"] = "CodemapFunction",
+  class = "CodemapClass",
+  struct = "CodemapStruct",
+}
+
+-- Linked (not copied) to standard :highlight-groups, so colors follow
+-- whatever colorscheme is active; `default = true` lets users override
+-- them (e.g. `:hi CodemapClass guifg=...`) without being clobbered here.
+local function ensure_highlights()
+  vim.api.nvim_set_hl(0, "CodemapFunction", { link = "Function", default = true })
+  vim.api.nvim_set_hl(0, "CodemapClass", { link = "Type", default = true })
+  vim.api.nvim_set_hl(0, "CodemapStruct", { link = "Structure", default = true })
+end
+
+ensure_highlights()
+vim.api.nvim_create_autocmd("ColorScheme", {
+  group = vim.api.nvim_create_augroup("CodemapHighlights", { clear = true }),
+  callback = ensure_highlights,
+})
+
 local state = {
   bufnr = nil,
   winid = nil,
@@ -118,7 +142,8 @@ function M.toggle()
   end
 end
 
--- items: list of { name = string, lnum = number }
+-- items: list of { name = string, lnum = number, size = number|nil,
+-- kind = "function"|"class"|"struct"|nil }
 function M.render(items, source_bufnr)
   if not state.bufnr or not vim.api.nvim_buf_is_valid(state.bufnr) then
     return
@@ -140,6 +165,18 @@ function M.render(items, source_bufnr)
   vim.bo[state.bufnr].modifiable = true
   vim.api.nvim_buf_set_lines(state.bufnr, 0, -1, false, lines)
   vim.bo[state.bufnr].modifiable = false
+
+  vim.api.nvim_buf_clear_namespace(state.bufnr, ns, 0, -1)
+  for i, item in ipairs(items) do
+    local hl = kind_highlights[item.kind]
+    if hl then
+      vim.api.nvim_buf_set_extmark(state.bufnr, ns, i - 1, 0, {
+        end_row = i,
+        hl_group = hl,
+        hl_eol = true,
+      })
+    end
+  end
 
   state.items = items
   state.source_bufnr = source_bufnr

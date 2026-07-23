@@ -5,12 +5,15 @@ buffer, extracted via treesitter, with jump-to-definition support.
 
 ## Features
 
-- Non-intrusive vertical sidebar on the right, listing function/method names
-  with their size in lines, e.g. `handleRequest (42)`.
+- Non-intrusive vertical sidebar on the right, listing functions, methods,
+  classes and structs with their size in lines, e.g. `handleRequest (42)`.
 - Powered by treesitter — no LSP required.
 - Supported languages: **Go**, **C**, **C++**, **Lua**, **Python**.
 - Auto-refreshes on `BufEnter` and on text changes (debounced).
-- Click (or `<CR>`) on a function name jumps to it in the source buffer.
+- Click (or `<CR>`) on an entry jumps to it in the source buffer.
+- Functions, classes and structs are highlighted with different colors
+  (linked to the standard `Function`/`Type`/`Structure` highlight groups —
+  see [Highlight groups](#highlight-groups)).
 
 ## Requirements
 
@@ -59,19 +62,36 @@ Passed as `opts` to the lazy.nvim spec (or via `require("codemap").setup(opts)`)
 | `debounce_ms`    | `300`                                           | Debounce delay for text-change refreshes      |
 | `auto_open`      | `false`                                         | Open the sidebar automatically on startup     |
 
-## Adding a new language
+## Highlight groups
 
-Support for a language is two entries in `lua/codemap/parser.lua`:
+Each entry in the sidebar is colored according to its kind. The groups are
+linked to standard `:highlight-groups`, so they follow your colorscheme;
+override them if you want different colors:
 
-1. A treesitter query in the `queries` table that captures the node(s)
-   representing a function/method as `@function`. Find the right node type
+| Group             | Linked to   | Used for              |
+|-------------------|-------------|------------------------|
+| `CodemapFunction` | `Function`  | Functions and methods  |
+| `CodemapClass`    | `Type`      | Classes                |
+| `CodemapStruct`   | `Structure` | Structs                |
+
+```lua
+vim.api.nvim_set_hl(0, "CodemapClass", { fg = "#ffcc00" })
+```
+
+## Adding a new language (or kind)
+
+Support for a language/kind pair is two entries in `lua/codemap/parser.lua`:
+
+1. A treesitter query in the `queries` table that captures the relevant
+   node(s) as `@function`, `@class` or `@struct`. Find the right node type
    by opening a file in that language and running:
    ```vim
    :lua print(vim.treesitter.get_parser(0, "<lang>"):parse()[1]:root():sexpr())
    ```
-2. An entry in `name_extractors` — a function `(node, bufnr) -> string|nil`
-   that pulls a display name out of the captured node (usually its `name`
-   field; C-family declarators may need to be unwrapped, see the `cpp`
-   extractor for an example).
+2. An entry in `name_extractors[lang][kind]` — a function
+   `(node, bufnr) -> string|nil` that pulls a display name out of the
+   captured node (usually its `name` field; C-family declarators may need
+   to be unwrapped, see the `cpp` function extractor for an example).
 
-Nothing else needs to change — `window.lua` and `init.lua` are language-agnostic.
+Nothing else needs to change — `window.lua` and `init.lua` are
+kind/language-agnostic.
