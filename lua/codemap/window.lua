@@ -8,8 +8,17 @@ local ns = vim.api.nvim_create_namespace("codemap")
 -- item.kind -> highlight group used for that line in the sidebar.
 local kind_highlights = {
   ["function"] = "CodemapFunction",
+  method = "CodemapMethod",
   class = "CodemapClass",
   struct = "CodemapStruct",
+}
+
+-- item.kind -> single-letter prefix shown before the name, e.g. "f foo (3)".
+local kind_prefixes = {
+  ["function"] = "f",
+  method = "m",
+  class = "c",
+  struct = "s",
 }
 
 -- Linked (not copied) to standard :highlight-groups, so colors follow
@@ -17,6 +26,7 @@ local kind_highlights = {
 -- them (e.g. `:hi CodemapClass guifg=...`) without being clobbered here.
 local function ensure_highlights()
   vim.api.nvim_set_hl(0, "CodemapFunction", { link = "Function", default = true })
+  vim.api.nvim_set_hl(0, "CodemapMethod", { link = "Function", default = true })
   vim.api.nvim_set_hl(0, "CodemapClass", { link = "Type", default = true })
   vim.api.nvim_set_hl(0, "CodemapStruct", { link = "Structure", default = true })
 end
@@ -152,11 +162,12 @@ function M.render(items, source_bufnr)
   items = items or {}
   local lines = {}
   for _, item in ipairs(items) do
+    local prefix = kind_prefixes[item.kind]
+    local text = prefix and (prefix .. " " .. item.name) or item.name
     if item.size then
-      table.insert(lines, item.name .. " (" .. item.size .. ")")
-    else
-      table.insert(lines, item.name)
+      text = text .. " (" .. item.size .. ")"
     end
+    table.insert(lines, text)
   end
   if #lines == 0 then
     lines = { "(no functions)" }

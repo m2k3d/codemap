@@ -6,14 +6,15 @@ buffer, extracted via treesitter, with jump-to-definition support.
 ## Features
 
 - Non-intrusive vertical sidebar on the right, listing functions, methods,
-  classes and structs with their size in lines, e.g. `handleRequest (42)`.
+  classes and structs with a one-letter kind prefix and their size in
+  lines, e.g. `f handleRequest (42)`.
 - Powered by treesitter — no LSP required.
 - Supported languages: **Go**, **C**, **C++**, **Lua**, **Python**.
 - Auto-refreshes on `BufEnter` and on text changes (debounced).
 - Click (or `<CR>`) on an entry jumps to it in the source buffer.
-- Functions, classes and structs are highlighted with different colors
-  (linked to the standard `Function`/`Type`/`Structure` highlight groups —
-  see [Highlight groups](#highlight-groups)).
+- Each kind (function/method/class/struct) gets its own prefix letter and
+  highlight color (linked to standard highlight groups — see
+  [Highlight groups](#highlight-groups)).
 
 ## Requirements
 
@@ -64,15 +65,22 @@ Passed as `opts` to the lazy.nvim spec (or via `require("codemap").setup(opts)`)
 
 ## Highlight groups
 
-Each entry in the sidebar is colored according to its kind. The groups are
-linked to standard `:highlight-groups`, so they follow your colorscheme;
-override them if you want different colors:
+Each entry in the sidebar gets a one-letter prefix and a color for its
+kind. The highlight groups are linked to standard `:highlight-groups`, so
+they follow your colorscheme; override them if you want different colors:
 
-| Group             | Linked to   | Used for              |
-|-------------------|-------------|------------------------|
-| `CodemapFunction` | `Function`  | Functions and methods  |
-| `CodemapClass`    | `Type`      | Classes                |
-| `CodemapStruct`   | `Structure` | Structs                |
+| Kind       | Prefix | Group             | Linked to   |
+|------------|--------|-------------------|-------------|
+| `function` | `f`    | `CodemapFunction` | `Function`  |
+| `method`   | `m`    | `CodemapMethod`   | `Function`  |
+| `class`    | `c`    | `CodemapClass`    | `Type`      |
+| `struct`   | `s`    | `CodemapStruct`   | `Structure` |
+
+A "method" is a function that belongs to a class/struct — a Go method
+(with a receiver), a C++/Python function defined inside a class/struct
+body, or a C++ out-of-class `ClassName::method() {}` definition. Lua's
+`function obj:name() end` colon syntax is still shown as a plain function,
+since Lua has no class construct.
 
 ```lua
 vim.api.nvim_set_hl(0, "CodemapClass", { fg = "#ffcc00" })
@@ -83,15 +91,19 @@ vim.api.nvim_set_hl(0, "CodemapClass", { fg = "#ffcc00" })
 Support for a language/kind pair is two entries in `lua/codemap/parser.lua`:
 
 1. A treesitter query in the `queries` table that captures the relevant
-   node(s) as `@function`, `@class` or `@struct`. Find the right node type
-   by opening a file in that language and running:
+   node(s) as `@function`, `@method`, `@class` or `@struct`. Find the right
+   node type by opening a file in that language and running:
    ```vim
    :lua print(vim.treesitter.get_parser(0, "<lang>"):parse()[1]:root():sexpr())
    ```
 2. An entry in `name_extractors[lang][kind]` — a function
-   `(node, bufnr) -> string|nil` that pulls a display name out of the
-   captured node (usually its `name` field; C-family declarators may need
-   to be unwrapped, see the `cpp` function extractor for an example).
+   `(node, bufnr) -> string|nil, string|nil` that pulls a display name out
+   of the captured node (usually its `name` field; C-family declarators may
+   need to be unwrapped, see the `cpp` function extractor for an example).
+   It may return a second value to override the kind implied by the
+   capture, for cases the query alone can't distinguish (e.g. telling a
+   C++/Python method apart from a plain function — see `cpp_function` and
+   `python_function`).
 
 Nothing else needs to change — `window.lua` and `init.lua` are
 kind/language-agnostic.
