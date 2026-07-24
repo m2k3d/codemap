@@ -1,3 +1,5 @@
+<img width="1920" height="1080" alt="222" src="https://github.com/user-attachments/assets/e41d3039-0692-4b9b-8724-da1326b184ce" />
+
 # codemap.nvim
 
 A minimal sidebar for Neovim that lists all functions/methods in the current
