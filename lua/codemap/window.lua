@@ -99,16 +99,132 @@ local function create_buffer()
   return bufnr
 end
 
+-- NOTE: must be scope="local". `vim.wo[winid].x = v` acts like `:set`, which
+-- also overwrites the *global* value — every window opened afterwards would
+-- inherit nonumber/signcolumn=no etc. for the rest of the session.
+local function set_local(winid, name, value)
+  vim.api.nvim_set_option_value(name, value, { win = winid, scope = "local" })
+end
+
 local function apply_win_options(winid)
-  vim.wo[winid].number = false
-  vim.wo[winid].relativenumber = false
-  vim.wo[winid].wrap = false
-  vim.wo[winid].signcolumn = "no"
-  vim.wo[winid].foldcolumn = "0"
-  vim.wo[winid].cursorline = true
-  vim.wo[winid].winfixwidth = true
-  vim.wo[winid].spell = false
-  vim.wo[winid].list = false
+  set_local(winid, "number", false)
+  set_local(winid, "relativenumber", false)
+  set_local(winid, "wrap", false)
+  set_local(winid, "signcolumn", "no")
+  set_local(winid, "foldcolumn", "0")
+  set_local(winid, "cursorline", true)
+  set_local(winid, "winfixwidth", true)
+  set_local(winid, "spell", false)
+  set_local(winid, "list", false)
+  set_local(winid, "fillchars", "eob: ")
+end
+
+-- Window-local options that apply_win_options touches. They belong to the
+-- *window*, not the buffer, so if a regular file ever ends up displayed in
+-- the sidebar window they must be reset, or the file is shown without line
+-- numbers, signcolumn etc.
+local altered_win_options = {
+  "number",
+  "relativenumber",
+  "wrap",
+  "signcolumn",
+  "foldcolumn",
+  "cursorline",
+  "spell",
+  "list",
+  "fillchars",
+  "winfixwidth",
+}
+
+local guard_group = vim.api.nvim_create_augroup("CodemapWindowGuard", { clear = true })
+
+local function clear_guard()
+  vim.api.nvim_clear_autocmds({ group = guard_group })
+end
+
+-- Turn the sidebar window back into a normal window: restore the user's
+-- global values for every option we changed and forget about the window.
+local function release_window(winid)
+  for _, opt in ipairs(altered_win_options) do
+    pcall(set_local, winid, opt, vim.api.nvim_get_option_value(opt, { scope = "global" }))
+  end
+  state.winid = nil
+  clear_guard()
+end
+
+local function list_non_floating_wins()
+  local wins = {}
+  for _, win in ipairs(vim.api.nvim_list_wins()) do
+    if vim.api.nvim_win_get_config(win).relative == "" then
+      table.insert(wins, win)
+    end
+  end
+  return wins
+end
+
+-- Keeps the sidebar window from silently becoming a regular window.
+-- Two situations, both caused by normal editing (e.g. `:bd` closes the
+-- window that showed the buffer; closing the file tree can then leave the
+-- sidebar as the last window):
+--  * the sidebar is the last non-floating window -> hand the window back
+--    to normal use (restored options, empty buffer) instead of a
+--    fullscreen sidebar;
+--  * some other buffer got displayed in the sidebar window -> move it to a
+--    real window if one exists, otherwise hand the window over to it.
+local function check_layout()
+  if state.winid and not vim.api.nvim_win_is_valid(state.winid) then
+    state.winid = nil
+    clear_guard()
+    return
+  end
+  if not M.is_open() then
+    return
+  end
+
+  local wins = list_non_floating_wins()
+  local shown = vim.api.nvim_win_get_buf(state.winid)
+
+  if #wins == 1 and wins[1] == state.winid then
+    local winid = state.winid
+    release_window(winid)
+    if shown == state.bufnr then
+      vim.api.nvim_win_set_buf(winid, vim.api.nvim_create_buf(true, false))
+    end
+    return
+  end
+
+  if shown ~= state.bufnr then
+    local other = nil
+    for _, win in ipairs(wins) do
+      if win ~= state.winid and vim.bo[vim.api.nvim_win_get_buf(win)].buftype == "" then
+        other = win
+        break
+      end
+    end
+    if other then
+      local winid = state.winid
+      vim.api.nvim_win_set_buf(winid, state.bufnr)
+      apply_win_options(winid)
+      vim.api.nvim_win_set_buf(other, shown)
+      if vim.api.nvim_get_current_win() == winid then
+        vim.api.nvim_set_current_win(other)
+      end
+    else
+      release_window(state.winid)
+    end
+  end
+end
+
+local function setup_guard()
+  clear_guard()
+  vim.api.nvim_create_autocmd({ "BufWinEnter", "WinEnter", "WinClosed" }, {
+    group = guard_group,
+    callback = function()
+      -- deferred: WinClosed fires before the window is gone, and swapping
+      -- buffers from inside the autocmd itself is unsafe
+      vim.schedule(check_layout)
+    end,
+  })
 end
 
 function M.setup(config)
@@ -128,13 +244,17 @@ function M.open()
     state.bufnr = create_buffer()
   end
 
+  -- No style="minimal" here: a window opened with it re-applies the minimal
+  -- style every time the displayed buffer changes, which breaks restoring
+  -- normal options if this window ever has to show a regular buffer.
+  -- apply_win_options() sets everything the sidebar needs.
   state.winid = vim.api.nvim_open_win(state.bufnr, false, {
     split = "right",
     width = state.config.width,
-    style = "minimal",
   })
 
   apply_win_options(state.winid)
+  setup_guard()
 end
 
 function M.close()
@@ -142,6 +262,7 @@ function M.close()
     vim.api.nvim_win_close(state.winid, true)
   end
   state.winid = nil
+  clear_guard()
 end
 
 function M.toggle()
