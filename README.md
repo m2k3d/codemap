@@ -3,8 +3,9 @@
 
 # codemap.nvim
 
-A minimal sidebar for Neovim that lists all functions/methods in the current
-buffer, extracted via treesitter, with jump-to-definition support.
+A minimal sidebar for Neovim that lists all functions, methods, classes and
+structs in the current buffer, extracted via treesitter, with
+jump-to-definition support.
 
 ## Features
 
@@ -42,7 +43,7 @@ return {
     width = 30, -- sidebar width, columns
     update_events = { "BufEnter", "TextChanged", "TextChangedI" }, -- when to refresh the list
     debounce_ms = 300, -- delay before re-parsing after a text edit
-    auto_open = true, -- open the sidebar automatically on startup
+    auto_open = true, -- open the sidebar automatically on startup (default: false)
   },
 }
 ```
@@ -54,6 +55,33 @@ return {
 | `:CodemapOpen`    | Open the sidebar                |
 | `:CodemapClose`   | Close the sidebar                |
 | `:CodemapToggle`  | Toggle the sidebar               |
+
+## Usage
+
+The plugin defines **no global keymaps** — bind the commands yourself, e.g.:
+
+```lua
+vim.keymap.set("n", "<leader>cm", "<cmd>CodemapToggle<cr>", { desc = "Toggle codemap" })
+```
+
+Inside the sidebar buffer only two mappings are set:
+
+| Key           | Action                                            |
+|---------------|---------------------------------------------------|
+| `<CR>`        | Jump to the entry under the cursor and focus it   |
+| `<LeftMouse>` | Same, via click (requires `mouse = "a"`)          |
+
+There is no `q` mapping by default; close the sidebar with `:CodemapClose`
+(or `:CodemapToggle`). If you want `q` to close it from inside, add:
+
+```lua
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = "codemap",
+  callback = function(args)
+    vim.keymap.set("n", "q", "<cmd>CodemapClose<cr>", { buffer = args.buf, nowait = true })
+  end,
+})
+```
 
 ## Configuration
 
@@ -84,6 +112,8 @@ A "method" is a function that belongs to a class/struct — a Go method
 body, or a C++ out-of-class `ClassName::method() {}` definition. Lua's
 `function obj:name() end` colon syntax is still shown as a plain function,
 since Lua has no class construct.
+
+For example:
 
 ```lua
 vim.api.nvim_set_hl(0, "CodemapClass", { fg = "#ffcc00" })
