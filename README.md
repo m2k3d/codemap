@@ -1,4 +1,4 @@
-<img width="1920" height="1080" alt="222" src="https://github.com/user-attachments/assets/e41d3039-0692-4b9b-8724-da1326b184ce" />
+![Uploading ezgif-50ed176002e6c719.gif…]()
 
 # codemap.nvim
 
