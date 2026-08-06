@@ -1,4 +1,5 @@
-<img width="600" height="437" alt="ezgif-50ed176002e6c719" src="https://github.com/user-attachments/assets/fc1ddf66-d397-448a-89a3-8c49319c4720" />
+<img width="800" height="450" alt="ezgif-77ff19e32a983f2e" src="https://github.com/user-attachments/assets/f5a29c1b-7e2f-4be7-b82b-2b3638bfd820" />
+
 
 # codemap.nvim
 
