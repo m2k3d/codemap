@@ -44,6 +44,7 @@ end
 local function register_autocmds(opts)
   local group = vim.api.nvim_create_augroup("Codemap", { clear = true })
 
+  -- BufEnter refreshes immediately; text-change events are debounced.
   local instant_events = {}
   local debounced_events = {}
   for _, ev in ipairs(opts.update_events) do

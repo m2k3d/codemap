@@ -1,16 +1,14 @@
--- Owns the sidebar window/buffer: creation, options, open/close/toggle and
--- rendering a list of items into it. Knows nothing about treesitter or
--- autocmd scheduling; it only draws whatever it is given.
+-- Sidebar window/buffer lifecycle and rendering. Independent of treesitter
+-- and autocmd scheduling: it renders whatever item list it is handed.
 local M = {}
 
 local ns = vim.api.nvim_create_namespace("codemap")
 
--- 'winfixbuf' (Neovim >=0.10) pins the buffer shown in a window: any attempt
--- to load another buffer there (`:edit`, a file-tree "open file", `:bd`
--- fallout) fails loudly instead of silently hijacking the sidebar window.
+-- 'winfixbuf' (Neovim >=0.10) pins a window's buffer, so a stray :edit, a
+-- file-tree "open file", or :bd fallout cannot replace the sidebar contents.
 local has_winfixbuf = vim.fn.exists("+winfixbuf") == 1
 
--- item.kind -> highlight group used for that line in the sidebar.
+-- item.kind -> highlight group
 local kind_highlights = {
   ["function"] = "CodemapFunction",
   method = "CodemapMethod",
@@ -18,7 +16,7 @@ local kind_highlights = {
   struct = "CodemapStruct",
 }
 
--- item.kind -> single-letter prefix shown before the name, e.g. "f foo (3)".
+-- item.kind -> single-letter line prefix, e.g. "f foo (3)"
 local kind_prefixes = {
   ["function"] = "f",
   method = "m",
@@ -26,9 +24,8 @@ local kind_prefixes = {
   struct = "s",
 }
 
--- Linked (not copied) to standard :highlight-groups, so colors follow
--- whatever colorscheme is active; `default = true` lets users override
--- them (e.g. `:hi CodemapClass guifg=...`) without being clobbered here.
+-- Link (not copy) to standard groups so colors track the colorscheme;
+-- default = true keeps user overrides (:hi CodemapClass ...) intact.
 local function ensure_highlights()
   vim.api.nvim_set_hl(0, "CodemapFunction", { link = "Function", default = true })
   vim.api.nvim_set_hl(0, "CodemapMethod", { link = "Function", default = true })
@@ -46,10 +43,9 @@ local state = {
   bufnr = nil,
   winid = nil,
   config = nil,
-  -- last rendered items; state.items[i] corresponds to sidebar line i and
-  -- is what <CR>/click use to know where to jump.
+  -- rendered items; items[i] maps to sidebar line i (used by <CR>/click)
   items = {},
-  -- source buffer the currently rendered items belong to
+  -- buffer the rendered items were parsed from
   source_bufnr = nil,
 }
 
@@ -73,8 +69,7 @@ function M.jump_to_current()
 
   local target_win = find_window_for_buf(state.source_bufnr)
   if not target_win then
-    -- source buffer no longer shown anywhere; reuse the window we were in
-    -- before entering the sidebar.
+    -- source no longer visible anywhere; reuse the previous window
     local alt = vim.fn.win_getid(vim.fn.winnr("#"))
     if alt == 0 or not vim.api.nvim_win_is_valid(alt) then
       return
@@ -104,9 +99,8 @@ local function create_buffer()
   return bufnr
 end
 
--- NOTE: must be scope="local". `vim.wo[winid].x = v` acts like `:set`, which
--- also overwrites the *global* value — every window opened afterwards would
--- inherit nonumber/signcolumn=no etc. for the rest of the session.
+-- scope must be "local": vim.wo[winid].x behaves like :set and also writes
+-- the global value, leaking nonumber/signcolumn=no etc. into later windows.
 local function set_local(winid, name, value)
   vim.api.nvim_set_option_value(name, value, { win = winid, scope = "local" })
 end
@@ -122,18 +116,15 @@ local function apply_win_options(winid)
   set_local(winid, "spell", false)
   set_local(winid, "list", false)
   set_local(winid, "fillchars", "eob: ")
-  -- Stop files from ever being loaded into the sidebar window. This is the
-  -- primary defence: a file-tree opening a file (or `:bd` fallout) can no
-  -- longer replace the sidebar's buffer, so the window can't be hijacked.
+  -- keep files out of the sidebar window (see has_winfixbuf)
   if has_winfixbuf then
     set_local(winid, "winfixbuf", true)
   end
 end
 
--- Window-local options that apply_win_options touches. They belong to the
--- *window*, not the buffer, so if a regular file ever ends up displayed in
--- the sidebar window they must be reset, or the file is shown without line
--- numbers, signcolumn etc.
+-- Window-local options set by apply_win_options; reset when the sidebar
+-- window is handed back for normal use, else a file shown there would
+-- inherit nonumber/signcolumn=no etc.
 local altered_win_options = {
   "number",
   "relativenumber",
@@ -153,11 +144,10 @@ local function clear_guard()
   vim.api.nvim_clear_autocmds({ group = guard_group })
 end
 
--- Turn the sidebar window back into a normal window: restore the user's
--- global values for every option we changed and forget about the window.
+-- Hand the sidebar window back for normal use: restore global option values
+-- and drop our reference to it.
 local function release_window(winid)
-  -- Clear winfixbuf first: while it is set, switching the window's buffer
-  -- (which callers do right after releasing) is rejected with E1513.
+  -- must clear winfixbuf before the buffer switches callers do next, else E1513
   if has_winfixbuf then
     pcall(set_local, winid, "winfixbuf", false)
   end
@@ -189,15 +179,12 @@ local function first_normal_win(wins, exclude)
   return nil
 end
 
--- Keeps the sidebar from getting stranded by normal editing. With winfixbuf
--- a file can no longer be loaded into the sidebar window, so what's left is:
---  * no normal editing window remains (the code area was closed -- a `:bd`
---    fallout, a file-tree action, etc.): the sidebar has nothing to mirror,
---    so close it. If it happens to be the very last window (Neovim forbids
---    closing that), hand it back as a normal empty window instead.
---  * a real buffer still ended up in the sidebar window (only reachable on
---    Neovim <0.10, where winfixbuf is unavailable): evict it to a normal
---    window and restore the sidebar buffer -- never close the sidebar here.
+-- Keep the sidebar from being stranded by ordinary editing. winfixbuf stops
+-- files from entering the sidebar window, leaving two cases to handle:
+--   * no normal (code) window left -> nothing to mirror: close the sidebar,
+--     or hand it back empty if it is the last window (which can't be closed);
+--   * a file slipped into the sidebar anyway (Neovim <0.10) -> move it to a
+--     real window and restore the sidebar; never close it here.
 local function check_layout()
   if state.winid and not vim.api.nvim_win_is_valid(state.winid) then
     state.winid = nil
@@ -243,8 +230,8 @@ local function setup_guard()
   vim.api.nvim_create_autocmd({ "BufWinEnter", "WinEnter", "WinClosed" }, {
     group = guard_group,
     callback = function()
-      -- deferred: WinClosed fires before the window is gone, and swapping
-      -- buffers from inside the autocmd itself is unsafe
+      -- defer: WinClosed fires before the window is gone, and swapping
+      -- buffers inside the autocmd is unsafe
       vim.schedule(check_layout)
     end,
   })
@@ -267,10 +254,9 @@ function M.open()
     state.bufnr = create_buffer()
   end
 
-  -- No style="minimal" here: a window opened with it re-applies the minimal
-  -- style every time the displayed buffer changes, which breaks restoring
-  -- normal options if this window ever has to show a regular buffer.
-  -- apply_win_options() sets everything the sidebar needs.
+  -- Not style="minimal": it re-applies on every buffer change and would
+  -- fight option restoration if the window ever shows a real file.
+  -- apply_win_options() covers what the sidebar needs.
   state.winid = vim.api.nvim_open_win(state.bufnr, false, {
     split = "right",
     width = state.config.width,
@@ -345,9 +331,7 @@ function M.get_winid()
   return state.winid
 end
 
--- Exposed for future features (e.g. current-function highlight):
--- state.items[i] <-> sidebar buffer line i, state.source_bufnr is the
--- buffer those items were parsed from.
+-- items[i] <-> sidebar line i; source is the buffer they were parsed from.
 function M.get_items()
   return state.items
 end

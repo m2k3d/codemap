@@ -1,17 +1,12 @@
--- Extracts a flat list of {name, lnum, size, kind} for functions, methods,
--- classes and structs in a buffer, using treesitter. `kind` is one of
--- "function", "method", "class", "struct". Each supported language needs
--- two things below, one pair per kind it supports:
---   1. a capture in `queries` tagging the relevant nodes as @function,
---      @method, @class or @struct
---   2. a matching entry in `name_extractors[lang][kind]` that pulls a
---      display name out of that captured node
--- An extractor may return a second value to override the kind implied by
--- its capture (used where the query alone can't tell a method from a
--- plain function, e.g. C++/Python member functions) — see `cpp_function`
--- and `python_function` below.
--- Add a new language (or a new kind for an existing language) by adding
--- both entries; nothing else in the plugin needs to change.
+-- Extracts a line-sorted list of {name, lnum, size, kind} for the functions,
+-- methods, classes and structs in a buffer, via treesitter. Each language
+-- needs, per kind it supports:
+--   1. a capture in `queries` tagging nodes as @function/@method/@class/@struct;
+--   2. an entry in `name_extractors[lang][kind]` returning a display name.
+-- An extractor may return a second value to override the captured kind for
+-- cases the query alone can't disambiguate (e.g. C++/Python member functions;
+-- see cpp_function/python_function). Adding a language or kind needs only
+-- these two entries.
 local M = {}
 
 local queries = {
@@ -123,8 +118,8 @@ local function go_function(node, bufnr)
 end
 
 -- method_declaration is a distinct node type from function_declaration in
--- go's grammar, so it's captured separately as @method — no ancestor/kind
--- inference needed here, unlike C++/Python.
+-- go's grammar, so it's captured separately as @method; no ancestor/kind
+-- inference is needed here, unlike C++/Python.
 local function go_method(node, bufnr)
   local name_node = node:field("name")[1]
   if not name_node then
