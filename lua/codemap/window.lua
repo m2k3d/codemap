@@ -5,6 +5,11 @@ local M = {}
 
 local ns = vim.api.nvim_create_namespace("codemap")
 
+-- 'winfixbuf' (Neovim >=0.10) pins the buffer shown in a window: any attempt
+-- to load another buffer there (`:edit`, a file-tree "open file", `:bd`
+-- fallout) fails loudly instead of silently hijacking the sidebar window.
+local has_winfixbuf = vim.fn.exists("+winfixbuf") == 1
+
 -- item.kind -> highlight group used for that line in the sidebar.
 local kind_highlights = {
   ["function"] = "CodemapFunction",
@@ -117,6 +122,12 @@ local function apply_win_options(winid)
   set_local(winid, "spell", false)
   set_local(winid, "list", false)
   set_local(winid, "fillchars", "eob: ")
+  -- Stop files from ever being loaded into the sidebar window. This is the
+  -- primary defence: a file-tree opening a file (or `:bd` fallout) can no
+  -- longer replace the sidebar's buffer, so the window can't be hijacked.
+  if has_winfixbuf then
+    set_local(winid, "winfixbuf", true)
+  end
 end
 
 -- Window-local options that apply_win_options touches. They belong to the
@@ -145,6 +156,11 @@ end
 -- Turn the sidebar window back into a normal window: restore the user's
 -- global values for every option we changed and forget about the window.
 local function release_window(winid)
+  -- Clear winfixbuf first: while it is set, switching the window's buffer
+  -- (which callers do right after releasing) is rejected with E1513.
+  if has_winfixbuf then
+    pcall(set_local, winid, "winfixbuf", false)
+  end
   for _, opt in ipairs(altered_win_options) do
     pcall(set_local, winid, opt, vim.api.nvim_get_option_value(opt, { scope = "global" }))
   end
@@ -162,15 +178,26 @@ local function list_non_floating_wins()
   return wins
 end
 
--- Keeps the sidebar window from silently becoming a regular window.
--- Two situations, both caused by normal editing (e.g. `:bd` closes the
--- window that showed the buffer; closing the file tree can then leave the
--- sidebar as the last window):
---  * the sidebar is the last non-floating window -> hand the window back
---    to normal use (restored options, empty buffer) instead of a
---    fullscreen sidebar;
---  * some other buffer got displayed in the sidebar window -> move it to a
---    real window if one exists, otherwise hand the window over to it.
+-- A non-floating window other than `exclude` that shows a normal editable
+-- buffer (buftype == ""), i.e. a real "code" window; nil if there is none.
+local function first_normal_win(wins, exclude)
+  for _, win in ipairs(wins) do
+    if win ~= exclude and vim.bo[vim.api.nvim_win_get_buf(win)].buftype == "" then
+      return win
+    end
+  end
+  return nil
+end
+
+-- Keeps the sidebar from getting stranded by normal editing. With winfixbuf
+-- a file can no longer be loaded into the sidebar window, so what's left is:
+--  * no normal editing window remains (the code area was closed -- a `:bd`
+--    fallout, a file-tree action, etc.): the sidebar has nothing to mirror,
+--    so close it. If it happens to be the very last window (Neovim forbids
+--    closing that), hand it back as a normal empty window instead.
+--  * a real buffer still ended up in the sidebar window (only reachable on
+--    Neovim <0.10, where winfixbuf is unavailable): evict it to a normal
+--    window and restore the sidebar buffer -- never close the sidebar here.
 local function check_layout()
   if state.winid and not vim.api.nvim_win_is_valid(state.winid) then
     state.winid = nil
@@ -182,35 +209,31 @@ local function check_layout()
   end
 
   local wins = list_non_floating_wins()
-  local shown = vim.api.nvim_win_get_buf(state.winid)
+  local dest = first_normal_win(wins, state.winid)
 
-  if #wins == 1 and wins[1] == state.winid then
-    local winid = state.winid
-    release_window(winid)
-    if shown == state.bufnr then
-      vim.api.nvim_win_set_buf(winid, vim.api.nvim_create_buf(true, false))
+  if not dest then
+    if #wins == 1 then
+      local winid = state.winid
+      release_window(winid)
+      if vim.api.nvim_win_get_buf(winid) == state.bufnr then
+        vim.api.nvim_win_set_buf(winid, vim.api.nvim_create_buf(true, false))
+      end
+    else
+      M.close()
     end
     return
   end
 
+  local shown = vim.api.nvim_win_get_buf(state.winid)
   if shown ~= state.bufnr then
-    local other = nil
-    for _, win in ipairs(wins) do
-      if win ~= state.winid and vim.bo[vim.api.nvim_win_get_buf(win)].buftype == "" then
-        other = win
-        break
-      end
+    if has_winfixbuf then
+      pcall(set_local, state.winid, "winfixbuf", false)
     end
-    if other then
-      local winid = state.winid
-      vim.api.nvim_win_set_buf(winid, state.bufnr)
-      apply_win_options(winid)
-      vim.api.nvim_win_set_buf(other, shown)
-      if vim.api.nvim_get_current_win() == winid then
-        vim.api.nvim_set_current_win(other)
-      end
-    else
-      release_window(state.winid)
+    vim.api.nvim_win_set_buf(state.winid, state.bufnr)
+    apply_win_options(state.winid)
+    vim.api.nvim_win_set_buf(dest, shown)
+    if vim.api.nvim_get_current_win() == state.winid then
+      vim.api.nvim_set_current_win(dest)
     end
   end
 end
