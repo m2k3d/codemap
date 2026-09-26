@@ -257,8 +257,12 @@ function M.open()
   -- Not style="minimal": it re-applies on every buffer change and would
   -- fight option restoration if the window ever shows a real file.
   -- apply_win_options() covers what the sidebar needs.
+  -- win = -1 makes the split relative to the whole editor (like :botright
+  -- vsplit), so the sidebar is always full-height at the far right; the
+  -- default (current window) would place it mid-layout in a split.
   state.winid = vim.api.nvim_open_win(state.bufnr, false, {
     split = "right",
+    win = -1,
     width = state.config.width,
   })
 
