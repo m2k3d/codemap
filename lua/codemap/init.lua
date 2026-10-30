@@ -23,8 +23,13 @@ local function refresh()
   end
 
   local bufnr = vim.api.nvim_get_current_buf()
-  -- ignore the sidebar's own buffer and anything already gone
-  if bufnr == window.get_bufnr() or not vim.api.nvim_buf_is_valid(bufnr) then
+  -- inside the sidebar, re-parse the buffer it lists: entering the sidebar
+  -- cancels any pending debounced refresh, which may hold unseen edits
+  if bufnr == window.get_bufnr() then
+    bufnr = window.get_source_bufnr()
+  end
+  -- ignore anything already gone
+  if not bufnr or not vim.api.nvim_buf_is_valid(bufnr) then
     return
   end
 
@@ -67,7 +72,12 @@ local function register_autocmds(opts)
   if #debounced_events > 0 then
     vim.api.nvim_create_autocmd(debounced_events, {
       group = group,
-      callback = function()
+      callback = function(args)
+        -- rendering changes the sidebar's own text too; reacting to that
+        -- would re-render it every debounce_ms while it has focus
+        if args.buf == window.get_bufnr() then
+          return
+        end
         schedule_refresh(opts.debounce_ms)
       end,
     })

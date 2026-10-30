@@ -69,7 +69,7 @@ Inside the sidebar buffer only two mappings are set:
 | Key           | Action                                            |
 |---------------|---------------------------------------------------|
 | `<CR>`        | Jump to the entry under the cursor and focus it   |
-| `<LeftMouse>` | Same, via click (requires `mouse = "a"`)          |
+| Left click    | Same, via click (requires `mouse = "a"`)          |
 
 There is no `q` mapping by default; close the sidebar with `:CodemapClose`
 (or `:CodemapToggle`). If you want `q` to close it from inside, add:

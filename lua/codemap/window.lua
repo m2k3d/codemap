@@ -79,7 +79,9 @@ function M.jump_to_current()
   end
 
   vim.api.nvim_set_current_win(target_win)
-  vim.api.nvim_win_set_cursor(target_win, { item.lnum, 0 })
+  -- the list can lag behind edits (e.g. by a formatter); stay in range
+  local lnum = math.min(item.lnum, vim.api.nvim_buf_line_count(state.source_bufnr))
+  vim.api.nvim_win_set_cursor(target_win, { lnum, 0 })
   vim.cmd("normal! zz")
 end
 
@@ -94,7 +96,17 @@ local function create_buffer()
 
   local opts = { buffer = bufnr, silent = true, nowait = true }
   vim.keymap.set("n", "<CR>", M.jump_to_current, opts)
-  vim.keymap.set("n", "<LeftMouse>", M.jump_to_current, opts)
+  -- on release, not press: the default <LeftMouse> must run first to move
+  -- focus and cursor to the clicked line. Mapping the press would replace
+  -- it, jumping to the stale cursor line, or even on clicks outside.
+  vim.keymap.set("n", "<LeftRelease>", function()
+    local pos = vim.fn.getmousepos()
+    -- pos.line is clamped to the last line for clicks below the list
+    local last_row = vim.fn.line("w$", state.winid) - vim.fn.line("w0", state.winid) + 1
+    if pos.winid == state.winid and pos.line > 0 and pos.winrow <= last_row then
+      M.jump_to_current()
+    end
+  end, opts)
 
   return bufnr
 end
